@@ -24,6 +24,13 @@ import datetime
 # Oof
 import eval as eval_script
 
+
+from detectron2.data import MetadataCatalog, build_detection_train_loader, build_detection_test_loader
+from opdmulti.motion_dataset_mapper import MotionDatasetMapper, MyMotionDatasetMapper
+from opdmulti.config import setup_opdcfg, get_parser
+from opdmulti.motion_data import register_motion_instances
+
+
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
 
@@ -78,6 +85,8 @@ parser.add_argument('--batch_alloc', default=None, type=str,
                     help='If using multiple GPUS, you can set this to be a comma separated list detailing which GPUs should get what local batch size (It should add up to your total batch size).')
 parser.add_argument('--no_autoscale', dest='autoscale', action='store_false',
                     help='YOLACT will automatically scale the lr and the number of iterations depending on the batch size. Set this if you want to disable that.')
+
+
 
 parser.set_defaults(keep_latest=False, log=True, log_gpu=False, interrupt=True, autoscale=True)
 args = parser.parse_args()
@@ -169,13 +178,37 @@ class CustomDataParallel(nn.DataParallel):
         
         return out
 
+# def build_train_loader(cfg):
+#     # mapper = MotionDatasetMapper(cfg, False)
+#     cfg.is_train=True
+#     mapper = MotionDatasetMapper(cfg, is_train=True)
+#     return build_detection_train_loader(cfg, mapper=mapper)
+
+
+def register_datasets(data_path, cfg):
+    dataset_keys = cfg.DATASETS.TRAIN + cfg.DATASETS.TEST
+    for dataset_key in dataset_keys:
+        json = f"{data_path}/annotations/{dataset_key}.json"
+        imgs = f"{data_path}/{dataset_key.split('_')[-1]}"
+        register_motion_instances(dataset_key, {}, json, imgs)
+
+
 def train():
     if not os.path.exists(args.save_folder):
         os.mkdir(args.save_folder)
 
-    dataset = COCODetection(image_path=cfg.dataset.train_images,
-                            info_file=cfg.dataset.train_info,
-                            transform=SSDAugmentation(MEANS))
+    opdargs = get_parser().parse_args()
+    opdcfg=setup_opdcfg(opdargs)
+    register_datasets('/data92/lisq2309/yolact/dataset/OPDMulti/MotionDataset_h5', opdcfg)
+    # a=MotionDatasetMapper.from_config(cfg,True)
+    mapper = MotionDatasetMapper(opdcfg, is_train=True)
+
+
+    data_loader = build_detection_train_loader(opdcfg, mapper=mapper)
+    
+    # dataset = COCODetection(image_path=cfg.dataset.train_images,
+    #                         info_file=cfg.dataset.train_info,
+    #                         transform=SSDAugmentation(MEANS))
     
     if args.validation_epoch > 0:
         setup_eval()
@@ -240,16 +273,19 @@ def train():
     iteration = max(args.start_iter, 0)
     last_time = time.time()
 
-    epoch_size = len(dataset) // args.batch_size
+    # epoch_size = len(dataset) // args.batch_size
+    epoch_size = 22 // args.batch_size
     num_epochs = math.ceil(cfg.max_iter / epoch_size)
     
     # Which learning rate adjustment step are we on? lr' = lr * gamma ^ step_index
     step_index = 0
 
-    data_loader = data.DataLoader(dataset, args.batch_size,
-                                  num_workers=args.num_workers,
-                                  shuffle=True, collate_fn=detection_collate,
-                                  pin_memory=True)
+    
+
+    # data_loader = data.DataLoader(dataset, args.batch_size,
+    #                               num_workers=args.num_workers,
+    #                               shuffle=True, collate_fn=detection_collate,
+    #                               pin_memory=True)
     
     
     save_path = lambda epoch, iteration: SavePath(cfg.name, epoch, iteration).get_path(root=args.save_folder)

@@ -648,7 +648,11 @@ coco_base_config = Config({
 })
 
 
-
+INPUT = Config({
+    # The number of features to have in each FPN layer
+    'FORMAT': 'RGB',
+})
+MODEL = Config({'MASK_ON':True})
 
 
 # ----------------------- YOLACT v1.0 CONFIGS ----------------------- #
@@ -701,6 +705,15 @@ yolact_base_config = coco_base_config.copy({
     'crowd_iou_threshold': 0.7,
 
     'use_semantic_segmentation_loss': True,
+
+
+    # 'INPUT': Config({'FORMAT': 'RGB',
+    #                  'MASK_FORMAT': 'polygon'}),
+    # 'MODEL': Config({'MASK_ON': True,
+    #                  'KEYPOINT_ON': False,
+    #                  'MODELATTRPATH': '/data92/lisq2309/OPDMulti-Release/dataset/OPDMulti/obj_info.json',
+    #                  'MOTIONNET': Config({'TYPE':'BMCC'}) })
+
 })
 
 yolact_im400_config = yolact_base_config.copy({
