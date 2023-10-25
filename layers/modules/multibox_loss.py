@@ -74,6 +74,8 @@ class MultiBoxLoss(nn.Module):
         conf_data = predictions['conf']
         mask_data = predictions['mask']
         priors    = predictions['priors']
+        mori      = predictions['mori']
+        maxi      = predictions['maxi']    
 
         if cfg.mask_type == mask_type.lincomb:
             proto_data = predictions['proto']
@@ -93,13 +95,19 @@ class MultiBoxLoss(nn.Module):
         gt_box_t = loc_data.new(batch_size, num_priors, 4)
         conf_t = loc_data.new(batch_size, num_priors).long()
         idx_t = loc_data.new(batch_size, num_priors).long()
+        mori_t = loc_data.new(batch_size, num_priors, 3)
+        maxi_t = loc_data.new(batch_size, num_priors, 3)
 
         if cfg.use_class_existence_loss:
             class_existence_t = loc_data.new(batch_size, num_classes-1)
 
         for idx in range(batch_size):
-            truths      = targets[idx][:, :-1].data
+            truths      = targets[idx][:, :-7].data
             labels[idx] = targets[idx][:, -1].data.long()
+
+            mori_gt        = targets[idx][:, -7:-4].data
+            maxi_gt        = targets[idx][:, -4:-1].data
+            # motion_gt   = 
 
             if cfg.use_class_existence_loss:
                 # Construct a one-hot vector for each object and collapse it into an existence vector with max
@@ -121,7 +129,8 @@ class MultiBoxLoss(nn.Module):
             
             match(self.pos_threshold, self.neg_threshold,
                   truths, priors.data, labels[idx], crowd_boxes,
-                  loc_t, conf_t, idx_t, idx, loc_data[idx])
+                  loc_t, conf_t, idx_t, idx, loc_data[idx], 
+                  mori_gt=mori_gt, maxi_gt=maxi_gt, mori_t=mori_t, maxi_t=maxi_t)
                   
             gt_box_t[idx, :, :] = truths[idx_t[idx]]
 
@@ -129,14 +138,26 @@ class MultiBoxLoss(nn.Module):
         loc_t = Variable(loc_t, requires_grad=False)
         conf_t = Variable(conf_t, requires_grad=False)
         idx_t = Variable(idx_t, requires_grad=False)
+        mori_t = Variable(mori_t, requires_grad=False)
+        maxi_t = Variable(maxi_t, requires_grad=False)
 
         pos = conf_t > 0
         num_pos = pos.sum(dim=1, keepdim=True)
         
         # Shape: [batch,num_priors,4]
         pos_idx = pos.unsqueeze(pos.dim()).expand_as(loc_data)
-        
+        moi_idx = pos.unsqueeze(pos.dim()).expand_as(mori)
         losses = {}
+
+
+        #OPD loss
+        mori_p = mori[moi_idx].view(-1, 3)
+        mori_t = mori_t[moi_idx].view(-1, 3)
+        maxi_p = maxi[moi_idx].view(-1, 3)
+        maxi_t = maxi_t[moi_idx].view(-1, 3)
+
+        losses['Mo'] = F.smooth_l1_loss(mori_p, mori_t, reduction='sum')
+        losses['Ma'] = F.smooth_l1_loss(maxi_p, maxi_t, reduction='sum') 
 
         # Localization Loss (Smooth L1)
         if cfg.train_boxes:

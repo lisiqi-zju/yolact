@@ -156,7 +156,8 @@ def change(gt, priors):
 
 
 
-def match(pos_thresh, neg_thresh, truths, priors, labels, crowd_boxes, loc_t, conf_t, idx_t, idx, loc_data):
+def match(pos_thresh, neg_thresh, truths, priors, labels, crowd_boxes, loc_t, conf_t, idx_t, idx, loc_data, 
+          mori_gt=None, maxi_gt=None, mori_t=None, maxi_t=None):
     """Match each prior box with the ground truth box of the highest jaccard
     overlap, encode the bounding boxes, then return the matched indices
     corresponding to both confidence and location preds.
@@ -225,6 +226,11 @@ def match(pos_thresh, neg_thresh, truths, priors, labels, crowd_boxes, loc_t, co
     loc_t[idx]  = loc    # [num_priors,4] encoded offsets to learn
     conf_t[idx] = conf   # [num_priors] top class label for each prior
     idx_t[idx]  = best_truth_idx # [num_priors] indices for lookup
+
+    if mori_gt is not None and mori_t is not None:
+        mori_t[idx] = mori_gt[best_truth_idx]  
+    if maxi_gt is not None and maxi_t is not None:
+        maxi_t[idx] = maxi_gt[best_truth_idx]  
 
 @torch.jit.script
 def encode(matched, priors, use_yolo_regressors:bool=False):

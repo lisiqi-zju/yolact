@@ -224,7 +224,7 @@ class MotionDatasetMapper(DatasetMapper):
         # but not efficient on large generic data structures due to the use of pickle & mp.Queue.
         # Therefore it's important to use torch.Tensor.
         dataset_dict["image"] = torch.as_tensor(
-            np.ascontiguousarray(image.transpose(2, 0, 1))
+            np.ascontiguousarray(image.transpose(2, 0, 1)).astype("float32")
         )
 
         #### MotionNet

@@ -160,7 +160,7 @@ def setup_opdcfg(args):
     else:
         raise ValueError("Invalid input format")
 
-    cfg.MODEL.MODELATTRPATH = args.model_attr_path
+    cfg.MODEL.MODELATTRPATH = "/data92/lisq2309/yolact/dataset/OPDMulti/obj_info.json"
 
     # Options for OPDFormer-V1/V2/V3
     cfg.MODEL.MOTIONNET.VOTING = args.voting
@@ -178,6 +178,7 @@ def setup_opdcfg(args):
     # cfg.MODEL.KEYPOINT_ON=False
     # cfg.MODEL.MODELATTRPATH='/data92/lisq2309/OPDMulti-Release/dataset/OPDMulti/obj_info.json'
     # opdcfg.MODEL.MOTIONNET.TYPE='BMCC'
+
 
     return cfg
 
@@ -197,7 +198,7 @@ def get_parser():
     )
     parser.add_argument(
         "--data-path",
-        default=f"/local-scratch/localhome/hja40/Desktop/Research/proj-motionnet/Dataset/MotionDataset_h5_6.11",
+        default=f"/data92/lisq2309/yolact/dataset/OPDMulti/obj_info.json",
         # default=f"/local-scratch/localhome/hja40/Desktop/Research/proj-motionnet/Dataset/backup/SmallDataset_h5_6.11",
         metavar="DIR",
         help="path containing motion datasets",
