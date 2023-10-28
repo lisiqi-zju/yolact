@@ -26,11 +26,8 @@ import datetime
 # Oof
 import eval as eval_script
 
-from detectron2.data import MetadataCatalog, build_detection_train_loader, build_detection_test_loader
-from opdmulti.motion_dataset_mapper import MotionDatasetMapper, MyMotionDatasetMapper
-from opdmulti.config import setup_opdcfg, get_parser
-from opdmulti.motion_data import register_motion_instances
-from detectron2.engine import default_setup
+from data.opdmulti import OPDmultiDetection
+
 
 
 def str2bool(v):
@@ -192,12 +189,7 @@ class CustomDataParallel(nn.DataParallel):
 #     return build_detection_train_loader(cfg, mapper=mapper)
 
 
-def register_datasets(data_path, cfg):
-    dataset_keys = cfg.DATASETS.TRAIN + cfg.DATASETS.TEST
-    for dataset_key in dataset_keys:
-        json = f"{data_path}/annotations/{dataset_key}.json"
-        imgs = f"{data_path}/{dataset_key.split('_')[-1]}"
-        register_motion_instances(dataset_key, {}, json, imgs)
+
 
 
 
@@ -205,14 +197,6 @@ def train():
     if not os.path.exists(args.save_folder):
         os.mkdir(args.save_folder)
 
-    
-
-    opdargs = get_parser().parse_args()
-    opdcfg=setup_opdcfg(opdargs)
-    default_setup(opdcfg, opdargs)
-    register_datasets('/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5', opdcfg)
-    # a=MotionDatasetMapper.from_config(cfg,True)
-    mapper = MotionDatasetMapper(opdcfg, is_train=True)
 
     # opdargs = get_parser().parse_args()
     # opdcfg=setup_opdcfg(opdargs)
@@ -222,18 +206,32 @@ def train():
     # mapper = MotionDatasetMapper(opdcfg, is_train=True)
 
     
-    data_loader = build_detection_train_loader(opdcfg, mapper=mapper)
+    
     # dataset=data_loader.dataset
+    dataset = OPDmultiDetection(image_path='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5',
+                            info_file='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5/annotations/MotionNet_train.json',
+                            transform=SSDAugmentation(MEANS))
     
     # dataset = COCODetection(image_path=cfg.dataset.train_images,
     #                         info_file=cfg.dataset.train_info,
     #                         transform=SSDAugmentation(MEANS))
+
+    data_loader = data.DataLoader(dataset, args.batch_size,
+                                  num_workers=args.num_workers,
+                                  shuffle=True, collate_fn=detection_collate,
+                                  pin_memory=True)
     
-    # if args.validation_epoch > 0:
-    #     setup_eval()
-    #     val_dataset = COCODetection(image_path=cfg.dataset.valid_images,
-    #                                 info_file=cfg.dataset.valid_info,
-    #                                 transform=BaseTransform(MEANS))
+    # for datum in data_loader:
+    #     print()
+    
+    
+
+    
+    if args.validation_epoch > 0:
+        setup_eval()
+        val_dataset = OPDmultiDetection(image_path='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5',
+                                    info_file='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5/annotations/MotionNet_valid.json',
+                                    transform=BaseTransform(MEANS))
 
     # Parallel wraps the underlying module, but when saving and loading we don't want that
     yolact_net = Yolact()
@@ -422,9 +420,9 @@ def train():
                             os.remove(latest)
             
             # This is done per epoch
-            # if args.validation_epoch > 0:
-            #     if epoch % args.validation_epoch == 0 and epoch > 0:
-            #         compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None)
+            if args.validation_epoch > 0:
+                if epoch % args.validation_epoch == 0 and epoch > 0:
+                    compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None)
         
         # Compute validation mAP after training is finished
         # compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None)
@@ -504,20 +502,22 @@ def prepare_data(datum, devices:list=None, allocation:list=None):
         # masks=[x["instances"].gt_masks.to(devices) for x in datum]
         # num_crowds=torch.zeros(len(a)).to(devices)
 
+        images, (targets, masks, num_crowds) = datum
+
         means=torch.tensor(MEANS).view(3,1,1)
         std=torch.tensor(STD).view(3,1,1)
-        images = [((x["image"]-means)/std)for x in datum]
-        bboxes=[voc_bbox_normalize(x["instances"].gt_boxes.tensor,x['width'],x['height']) for x in datum]
+        images = [((x-means)/std)for x in images]
+        # bboxes=[voc_bbox_normalize(x["instances"].gt_boxes.tensor,x['width'],x['height']) for x in datum]
         # bboxes=[x["instances"].gt_boxes.tensor for x in datum]
-        classes=[torch.unsqueeze(x["instances"].gt_classes.data,1) for x in datum]
-        mori=[x["instances"].gt_origins.data for x in datum]
-        maxi=[x["instances"].gt_axises.data for x in datum]
-        targets=[]
-        for i in range(len(bboxes)):
-            targets.append(torch.cat((bboxes[i],classes[i],mori[i],maxi[i]),dim=1))
+        # classes=[torch.unsqueeze(x["instances"].gt_classes.data,1) for x in datum]
+        # mori=[x["instances"].gt_origins.data for x in datum]
+        # maxi=[x["instances"].gt_axises.data for x in datum]
+        # targets=[]
+        # for i in range(len(bboxes)):
+        #     targets.append(torch.cat((bboxes[i],classes[i],mori[i],maxi[i]),dim=1))
 
-        masks=[torch.tensor(x["instances"].gt_masks,dtype=torch.float32) for x in datum]
-        num_crowds=torch.zeros(len(images)).to('cuda')
+        # masks=[torch.tensor(x["instances"].gt_masks,dtype=torch.float32) for x in datum]
+        # num_crowds=torch.zeros(len(images)).to('cuda')
 
         
         # images, (targets, masks, num_crowds) = datum

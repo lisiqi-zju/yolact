@@ -111,6 +111,8 @@ dataset_base = Config({
     # Training images and annotations
     'train_images': './data/coco/images/',
     'train_info':   'path_to_annotation_file',
+    # 'train_images': '/data92/lisq2309/test_yolact/yolact/data/coco/images',
+    # 'train_info':   '/data92/lisq2309/test_yolact/yolact/data/coco/annotations',
 
     # Validation images and annotations.
     'valid_images': './data/coco/images/',
@@ -140,8 +142,11 @@ coco2014_dataset = dataset_base.copy({
 coco2017_dataset = dataset_base.copy({
     'name': 'COCO 2017',
     
-    'train_info': './data/coco/annotations/instances_train2017.json',
-    'valid_info': './data/coco/annotations/instances_val2017.json',
+    'train_info': '/data92/lisq2309/test_yolact/yolact/data/coco/annotations/instances_train2017.json',
+    # 'valid_info': './data/coco/annotations/instances_val2017.json',
+    # 'train_images': '/data92/lisq2309/test_yolact/yolact/data/coco/images',
+    # 'train_info':   '/data92/lisq2309/test_yolact/yolact/data/coco/annotations',
+
 
     'label_map': COCO_LABEL_MAP
 })
