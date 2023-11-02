@@ -28,7 +28,7 @@ from PIL import Image
 
 import matplotlib.pyplot as plt
 import cv2
-
+from data.opdmulti import OPDmultiDetection
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
@@ -383,11 +383,41 @@ def _bbox_iou(bbox1, bbox2, iscrowd=False):
         ret = jaccard(bbox1, bbox2, iscrowd)
     return ret.cpu()
 
+def _axis_distance(axis1, axis2, iscrowd=False):
+    out=torch.empty(axis1.shape[0],axis2.shape[0])
+    axis1=axis1.cpu()
+    axis2=axis2.cpu()
+    for i in range(axis1.shape[0]):
+        for j in range(axis2.shape[0]):
+            out[i, j] = torch.matmul(axis1[i], axis2[j]) / (torch.linalg.norm(axis1[i]) * torch.linalg.norm(axis2[j]))
+            if out[i, j] <0 :
+                out[i, j] = - out[i, j]
+            out[i, j] = min(out[i, j],1.0)
+            out[i, j] = torch.arccos(out[i, j]) / np.pi * 180
+    return out.cpu()
+
+# def _axis_iou(axis1, axis2, iscrowd=False):
+#         # Calculate the difference between the pred and gt axis (degree)
+#     dtAxis[tind, dind] =   dot(gt_axis, pred_axis) / (
+#         norm(gt_axis) * norm(pred_axis)
+#     )
+#     if dtAxis[tind, dind] < 0:
+#         dtAxis[tind, dind] = -dtAxis[tind, dind]
+#     dtAxis[tind, dind] = min(dtAxis[tind, dind], 1.0)
+#     ## dtAxis used for evaluation metric MD
+#     dtAxis[tind, dind] = np.arccos(dtAxis[tind, dind]) / np.pi * 180
+#     ## dtAxisThres used for evaluation metric mDP
+#     if dtAxis[tind, dind] <= self.AxisThres:
+#         dtAxisThres[tind, dind] = 1
+#     else:
+#         dtAxisThres[tind, dind] = 0
+
 def prep_metrics(ap_data, dets, img, gt, gt_masks, h, w, num_crowd, image_id, detections:Detections=None):
     """ Returns a list of APs for this image, with each element being for a class  """
     if not args.output_coco_json:
         with timer.env('Prepare gt'):
             gt_boxes = torch.Tensor(gt[:, :4])
+            gt_axes = torch.Tensor(gt[:, 5:8])
             gt_boxes[:, [0, 2]] *= w
             gt_boxes[:, [1, 3]] *= h
             gt_classes = list(gt[:, 4].astype(int))
@@ -401,7 +431,11 @@ def prep_metrics(ap_data, dets, img, gt, gt_masks, h, w, num_crowd, image_id, de
 
     with timer.env('Postprocess'):
         classes, scores, boxes, masks = postprocess(dets, w, h, crop_masks=args.crop, score_threshold=args.score_threshold)
-
+        if min(classes.shape) == 0:
+            axes=torch.Size([])
+        else:
+            axes=dets[0]['detection']['axes'] #only have one batch   so batch_idx =0
+        # ori=dets[0]['maxi']
         if classes.size(0) == 0:
             return
 
@@ -413,8 +447,10 @@ def prep_metrics(ap_data, dets, img, gt, gt_masks, h, w, num_crowd, image_id, de
             scores = list(scores.cpu().numpy().astype(float))
             box_scores = scores
             mask_scores = scores
+            axis_scores = scores
         masks = masks.view(-1, h*w).cuda()
         boxes = boxes.cuda()
+        axes = axes.cuda()
 
 
     if args.output_coco_json:
@@ -435,6 +471,8 @@ def prep_metrics(ap_data, dets, img, gt, gt_masks, h, w, num_crowd, image_id, de
         mask_iou_cache = _mask_iou(masks, gt_masks)
         bbox_iou_cache = _bbox_iou(boxes.float(), gt_boxes.float())
 
+        axis_distance_cache = _axis_distance(axes,gt_axes)
+
         if num_crowd > 0:
             crowd_mask_iou_cache = _mask_iou(masks, crowd_masks, iscrowd=True)
             crowd_bbox_iou_cache = _bbox_iou(boxes.float(), crowd_boxes.float(), iscrowd=True)
@@ -451,7 +489,10 @@ def prep_metrics(ap_data, dets, img, gt, gt_masks, h, w, num_crowd, image_id, de
                      lambda i: box_scores[i], box_indices),
             ('mask', lambda i,j: mask_iou_cache[i, j].item(),
                      lambda i,j: crowd_mask_iou_cache[i,j].item(),
-                     lambda i: mask_scores[i], mask_indices)
+                     lambda i: mask_scores[i], mask_indices),
+            ('box+a', lambda i,j: bbox_iou_cache[i, j].item(),
+                     lambda i,j: crowd_bbox_iou_cache[i,j].item(),
+                     lambda i: box_scores[i], box_indices)
         ]
 
     timer.start('Main loop')
@@ -479,10 +520,17 @@ def prep_metrics(ap_data, dets, img, gt, gt_masks, h, w, num_crowd, image_id, de
                             continue
                             
                         iou = iou_func(i, j)
+                        axis_dis=axis_distance_cache[i, j].item()
+                        
+                        if iou_type == 'box+a':
+                            if (iou > max_iou_found) and (axis_dis<50):
+                                max_iou_found = iou
+                                max_match_idx = j
 
-                        if iou > max_iou_found:
-                            max_iou_found = iou
-                            max_match_idx = j
+                        else:
+                            if iou > max_iou_found:
+                                max_iou_found = iou
+                                max_match_idx = j
                     
                     if max_match_idx >= 0:
                         gt_used[max_match_idx] = True
@@ -903,7 +951,9 @@ def evaluate(net:Yolact, dataset, train_mode=False):
         # Index ap_data[type][iouIdx][classIdx]
         ap_data = {
             'box' : [[APDataObject() for _ in cfg.dataset.class_names] for _ in iou_thresholds],
-            'mask': [[APDataObject() for _ in cfg.dataset.class_names] for _ in iou_thresholds]
+            'mask': [[APDataObject() for _ in cfg.dataset.class_names] for _ in iou_thresholds],
+            'box+a': [[APDataObject() for _ in cfg.dataset.class_names] for _ in iou_thresholds]
+
         }
         detections = Detections()
     else:
@@ -1005,20 +1055,20 @@ def evaluate(net:Yolact, dataset, train_mode=False):
 
 def calc_map(ap_data):
     print('Calculating mAP...')
-    aps = [{'box': [], 'mask': []} for _ in iou_thresholds]
+    aps = [{'box': [], 'mask': [], 'box+a': []} for _ in iou_thresholds]
 
     for _class in range(len(cfg.dataset.class_names)):
         for iou_idx in range(len(iou_thresholds)):
-            for iou_type in ('box', 'mask'):
+            for iou_type in ('box', 'mask', 'box+a'):
                 ap_obj = ap_data[iou_type][iou_idx][_class]
 
                 if not ap_obj.is_empty():
                     aps[iou_idx][iou_type].append(ap_obj.get_ap())
 
-    all_maps = {'box': OrderedDict(), 'mask': OrderedDict()}
+    all_maps = {'box': OrderedDict(), 'mask': OrderedDict(), 'box+a': OrderedDict()}
 
     # Looking back at it, this code is really hard to read :/
-    for iou_type in ('box', 'mask'):
+    for iou_type in ('box', 'mask', 'box+a'):
         all_maps[iou_type]['all'] = 0 # Make this first in the ordereddict
         for i, threshold in enumerate(iou_thresholds):
             mAP = sum(aps[i][iou_type]) / len(aps[i][iou_type]) * 100 if len(aps[i][iou_type]) > 0 else 0
@@ -1039,7 +1089,7 @@ def print_maps(all_maps):
     print()
     print(make_row([''] + [('.%d ' % x if isinstance(x, int) else x + ' ') for x in all_maps['box'].keys()]))
     print(make_sep(len(all_maps['box']) + 1))
-    for iou_type in ('box', 'mask'):
+    for iou_type in ('box', 'mask', 'box+a'):
         print(make_row([iou_type] + ['%.2f' % x if x < 100 else '%.1f' % x for x in all_maps[iou_type].values()]))
     print(make_sep(len(all_maps['box']) + 1))
     print()
@@ -1087,8 +1137,11 @@ if __name__ == '__main__':
             exit()
 
         if args.image is None and args.video is None and args.images is None:
-            dataset = COCODetection(cfg.dataset.valid_images, cfg.dataset.valid_info,
-                                    transform=BaseTransform(), has_gt=cfg.dataset.has_gt)
+            # dataset = COCODetection(cfg.dataset.valid_images, cfg.dataset.valid_info,
+            #                         transform=BaseTransform(), has_gt=cfg.dataset.has_gt)
+            dataset = OPDmultiDetection(image_path='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5',
+                                    info_file='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5/annotations/MotionNet_valid.json',
+                                    transform=BaseTransform(),mode='valid')
             prep_coco_cats()
         else:
             dataset = None        

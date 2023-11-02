@@ -177,6 +177,7 @@ def match(pos_thresh, neg_thresh, truths, priors, labels, crowd_boxes, loc_t, co
         The matched indices corresponding to 1)location and 2)confidence preds.
     """
     decoded_priors = decode(loc_data, priors, cfg.use_yolo_regressors) if cfg.use_prediction_matching else point_form(priors)
+    # decoded_priors = priors
     
     # Size [num_objects, num_priors]
     overlaps = jaccard(truths, decoded_priors) if not cfg.use_change_matching else change(truths, decoded_priors)
@@ -297,7 +298,6 @@ def decode(loc, priors, use_yolo_regressors:bool=False):
     Returns: A tensor of decoded relative coordinates in point form 
              form with size [num_priors, 4]
     """
-
     if use_yolo_regressors:
         # Decoded boxes in center-size notation
         boxes = torch.cat((

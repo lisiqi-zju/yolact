@@ -5,14 +5,12 @@ from utils.logger import Log
 from utils import timer
 from layers.modules import MultiBoxLoss
 from yolact import Yolact
-import torch
 import os
 import sys
 import time
 import math, random
 from pathlib import Path
-
-
+import torch
 from torch.autograd import Variable
 import torch.nn as nn
 import torch.optim as optim
@@ -25,18 +23,14 @@ import datetime
 
 # Oof
 import eval as eval_script
-
 from data.opdmulti import OPDmultiDetection
-
-
-
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
 
 
 parser = argparse.ArgumentParser(
     description='Yolact Training Script')
-parser.add_argument('--batch_size', default=8, type=int,
+parser.add_argument('--batch_size', default=64, type=int,
                     help='Batch size for training')
 parser.add_argument('--resume', default=None, type=str,
                     help='Checkpoint state_dict file to resume training from. If this is "interrupt"'\
@@ -44,7 +38,7 @@ parser.add_argument('--resume', default=None, type=str,
 parser.add_argument('--start_iter', default=-1, type=int,
                     help='Resume training at this iter. If this is -1, the iteration will be'\
                          'determined from the file name.')
-parser.add_argument('--num_workers', default=4, type=int,
+parser.add_argument('--num_workers', default=16, type=int,
                     help='Number of workers used in dataloading')
 parser.add_argument('--cuda', default=True, type=str2bool,
                     help='Use CUDA to train model')
@@ -84,8 +78,6 @@ parser.add_argument('--batch_alloc', default=None, type=str,
                     help='If using multiple GPUS, you can set this to be a comma separated list detailing which GPUs should get what local batch size (It should add up to your total batch size).')
 parser.add_argument('--no_autoscale', dest='autoscale', action='store_false',
                     help='YOLACT will automatically scale the lr and the number of iterations depending on the batch size. Set this if you want to disable that.')
-
-
 
 parser.set_defaults(keep_latest=False, log=True, log_gpu=False, interrupt=True, autoscale=True)
 args = parser.parse_args()
@@ -127,11 +119,8 @@ if args.batch_size // torch.cuda.device_count() < 6:
 
 loss_types = ['B', 'C', 'M', 'P', 'D', 'E', 'S', 'I', 'Mo', 'Ma']
 
-
-
 if torch.cuda.is_available():
     if args.cuda:
-        # print("TODO: train.py 133")
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
     if not args.cuda:
         print("WARNING: It looks like you have a CUDA device, but aren't " +
@@ -139,8 +128,6 @@ if torch.cuda.is_available():
         torch.set_default_tensor_type('torch.FloatTensor')
 else:
     torch.set_default_tensor_type('torch.FloatTensor')
-
-
 
 class NetLoss(nn.Module):
     """
@@ -182,56 +169,22 @@ class CustomDataParallel(nn.DataParallel):
         
         return out
 
-# def build_train_loader(cfg):
-#     # mapper = MotionDatasetMapper(cfg, False)
-#     cfg.is_train=True
-#     mapper = MotionDatasetMapper(cfg, is_train=True)
-#     return build_detection_train_loader(cfg, mapper=mapper)
-
-
-
-
-
-
 def train():
     if not os.path.exists(args.save_folder):
         os.mkdir(args.save_folder)
 
-
-    # opdargs = get_parser().parse_args()
-    # opdcfg=setup_opdcfg(opdargs)
-    # default_setup(opdcfg, opdargs)
-    # register_datasets('/data92/lisq2309/yolact/dataset/OPDMulti/MotionDataset_h5', opdcfg)
-    # # a=MotionDatasetMapper.from_config(cfg,True)
-    # mapper = MotionDatasetMapper(opdcfg, is_train=True)
-
-    
-    
-    # dataset=data_loader.dataset
-    dataset = OPDmultiDetection(image_path='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5',
-                            info_file='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5/annotations/MotionNet_train.json',
-                            transform=SSDAugmentation(MEANS))
-    
     # dataset = COCODetection(image_path=cfg.dataset.train_images,
     #                         info_file=cfg.dataset.train_info,
     #                         transform=SSDAugmentation(MEANS))
-
-    data_loader = data.DataLoader(dataset, args.batch_size,
-                                  num_workers=args.num_workers,
-                                  shuffle=True, collate_fn=detection_collate,
-                                  pin_memory=True)
-    
-    # for datum in data_loader:
-    #     print()
-    
-    
-
+    dataset = OPDmultiDetection(image_path='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5',
+                            info_file='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5/annotations/MotionNet_train.json',
+                            transform=BaseTransform(MEANS))
     
     if args.validation_epoch > 0:
         setup_eval()
         val_dataset = OPDmultiDetection(image_path='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5',
                                     info_file='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5/annotations/MotionNet_valid.json',
-                                    transform=BaseTransform(MEANS))
+                                    transform=BaseTransform(MEANS),mode='valid')
 
     # Parallel wraps the underlying module, but when saving and loading we don't want that
     yolact_net = Yolact()
@@ -290,19 +243,18 @@ def train():
     iteration = max(args.start_iter, 0)
     last_time = time.time()
 
-    # epoch_size = len(dataset) // args.batch_size
-    epoch_size = 18479// args.batch_size
+    epoch_size = len(dataset) // args.batch_size
+    # epoch_size=100
     num_epochs = math.ceil(cfg.max_iter / epoch_size)
+    # num_epochs=1
     
     # Which learning rate adjustment step are we on? lr' = lr * gamma ^ step_index
     step_index = 0
 
-    
-
-    # data_loader = data.DataLoader(dataset, args.batch_size,
-    #                               num_workers=args.num_workers,
-    #                               shuffle=True, collate_fn=detection_collate,
-    #                               pin_memory=True)
+    data_loader = data.DataLoader(dataset, args.batch_size,
+                                  num_workers=args.num_workers,
+                                  shuffle=False, collate_fn=detection_collate,
+                                  pin_memory=True)
     
     
     save_path = lambda epoch, iteration: SavePath(cfg.name, epoch, iteration).get_path(root=args.save_folder)
@@ -319,8 +271,7 @@ def train():
             # Resume from start_iter
             if (epoch+1)*epoch_size < iteration:
                 continue
-            torch.set_default_tensor_type('torch.FloatTensor')
-            # torch.multiprocessing.set_start_method('spawn')
+            
             for datum in data_loader:
                 # Stop if we've reached an epoch if we're resuming from start_iter
                 if iteration == (epoch+1)*epoch_size:
@@ -425,7 +376,7 @@ def train():
                     compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None)
         
         # Compute validation mAP after training is finished
-        # compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None)
+        compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None)
     except KeyboardInterrupt:
         if args.interrupt:
             print('Stopping early. Saving network...')
@@ -450,40 +401,6 @@ def gradinator(x):
     x.requires_grad = False
     return x
 
-
-
-def prepare_targets(targets, images):
-    h_pad, w_pad = images.tensor.shape[-2:]
-    new_targets = []
-    for targets_per_image in targets:
-        if hasattr(targets_per_image, "gt_masks"):
-            # pad gt
-            gt_masks = targets_per_image.gt_masks
-            padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
-            padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
-        else:
-            padded_masks = torch.tensor([])
-  
-        new_targets.append(
-            {
-                "labels": targets_per_image.gt_classes,
-                "masks": padded_masks,
-                # OPD
-                "gt_motion_valids": targets_per_image.gt_motion_valids,
-                "gt_types": targets_per_image.gt_types,
-                "gt_origins": targets_per_image.gt_origins,
-                "gt_axises": targets_per_image.gt_axises,
-            }
-            )
-    return new_targets
-
-def voc_bbox_normalize(bbox_tensor,w,h):
-    bbox_tensor[:,[0,2]]=bbox_tensor[:,[0,2]]/w
-    bbox_tensor[:,[1,3]]=bbox_tensor[:,[1,3]]/h
-
-    return bbox_tensor
-
-
 def prepare_data(datum, devices:list=None, allocation:list=None):
     with torch.no_grad():
         if devices is None:
@@ -492,35 +409,7 @@ def prepare_data(datum, devices:list=None, allocation:list=None):
             allocation = [args.batch_size // len(devices)] * (len(devices) - 1)
             allocation.append(args.batch_size - sum(allocation)) # The rest might need more/less
         
-        # images = [x["image"].to(devices) for x in datum]
-        # a=[x["instances"].gt_boxes.tensor.to(devices) for x in datum]
-        # b=[torch.unsqueeze(x["instances"].gt_classes.data.to(devices),1) for x in datum]
-        # targets=[]
-        # for i in range(len(a)):
-        #     targets.append(torch.cat((a[i],b[i]),dim=1))
-
-        # masks=[x["instances"].gt_masks.to(devices) for x in datum]
-        # num_crowds=torch.zeros(len(a)).to(devices)
-
         images, (targets, masks, num_crowds) = datum
-
-        means=torch.tensor(MEANS).view(3,1,1)
-        std=torch.tensor(STD).view(3,1,1)
-        images = [((x-means)/std)for x in images]
-        # bboxes=[voc_bbox_normalize(x["instances"].gt_boxes.tensor,x['width'],x['height']) for x in datum]
-        # bboxes=[x["instances"].gt_boxes.tensor for x in datum]
-        # classes=[torch.unsqueeze(x["instances"].gt_classes.data,1) for x in datum]
-        # mori=[x["instances"].gt_origins.data for x in datum]
-        # maxi=[x["instances"].gt_axises.data for x in datum]
-        # targets=[]
-        # for i in range(len(bboxes)):
-        #     targets.append(torch.cat((bboxes[i],classes[i],mori[i],maxi[i]),dim=1))
-
-        # masks=[torch.tensor(x["instances"].gt_masks,dtype=torch.float32) for x in datum]
-        # num_crowds=torch.zeros(len(images)).to('cuda')
-
-        
-        # images, (targets, masks, num_crowds) = datum
 
         cur_idx = 0
         for device, alloc in zip(devices, allocation):
@@ -574,9 +463,7 @@ def compute_validation_loss(net, data_loader, criterion):
         # Don't switch to eval mode because we want to get losses
         iterations = 0
         for datum in data_loader:
-           
             images, targets, masks, num_crowds = prepare_data(datum)
-
             out = net(images)
 
             wrapper = ScatterWrapper(targets, masks, num_crowds)

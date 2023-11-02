@@ -185,9 +185,9 @@ def register_datasets(data_path, cfg):
 class OPDmultiDetection(data.Dataset):
 
 
-    def __init__(self, image_path, info_file, transform=None,
+    def __init__(self, image_path,info_file, transform=None,
                  target_transform=None,
-                 dataset_name='OPDmulti', has_gt=True):
+                 dataset_name='OPDmulti', has_gt=True, mode='train'):
         
         from pycocotools.coco import COCO
         
@@ -207,7 +207,7 @@ class OPDmultiDetection(data.Dataset):
 
         self.has_gt = has_gt
         self.filenames_map = {}
-        self.load_h5(image_path, 'train')
+        self.load_h5(image_path, mode)
 		
 
     def load_h5(self, base_dir, dir):
@@ -262,23 +262,23 @@ class OPDmultiDetection(data.Dataset):
 
 
         target = np.array(target)
-        # if self.transform is not None:
-        #     if len(target) > 0:
-        #         target = np.array(target)
-        #         img, masks, boxes, labels = self.transform(img, masks, target[:, :4],
-        #             {'num_crowds': num_crowds, 'labels': target[:, 4]})
+        if self.transform is not None:
+            if len(target) > 0:
+                target = np.array(target)
+                img, masks, boxes, labels = self.transform(img, masks, target[:, :4],
+                    {'num_crowds': num_crowds, 'labels': target[:, 4]})
             
-        #         # I stored num_crowds in labels so I didn't have to modify the entirety of augmentations
-        #         num_crowds = labels['num_crowds']
-        #         labels     = labels['labels']
+                # I stored num_crowds in labels so I didn't have to modify the entirety of augmentations
+                num_crowds = labels['num_crowds']
+                labels     = labels['labels']
                 
-        #         print(boxes.shape,labels.shape,target.shape)
-        #         target = np.hstack((boxes, np.expand_dims(labels, axis=1),target[:, 5:]))
-        #     else:
-        #         img, _, _, _ = self.transform(img, np.zeros((1, height, width), dtype=np.float), np.array([[0, 0, 1, 1]]),
-        #             {'num_crowds': 0, 'labels': np.array([0])})
-        #         masks = None
-        #         target = None			
+                # print(boxes.shape,labels.shape,target.shape)
+                target = np.hstack((boxes, np.expand_dims(labels, axis=1),target[:, 5:]))
+            else:
+                img, _, _, _ = self.transform(img, np.zeros((1, height, width), dtype=np.float), np.array([[0, 0, 1, 1]]),
+                    {'num_crowds': 0, 'labels': np.array([0])})
+                masks = None
+                target = None			
 
         if target.shape[0] == 0:
             print('Warning: Augmentation output an example with no ground truth. Resampling...')
