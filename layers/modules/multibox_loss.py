@@ -162,9 +162,13 @@ class MultiBoxLoss(nn.Module):
         # losses['Ma'] = F.smooth_l1_loss(maxi_p, maxi_t, reduction='sum')
         dis=0
         for i in range(mori_p.shape[0]):
-            dis += torch.norm(mori_p[i]-mori_t[i]).item()
-        losses['Ma']=dis
+            dis += torch.norm(mori_p[i]-mori_t[i]).item()*3
+        # losses['Mo']=dis
 
+        dis=0
+        for i in range(mori_p.shape[0]):
+            dis += torch.norm(maxi_p[i]-maxi_t[i]).item()*3
+        # losses['Ma']=dis
         # Localization Loss (Smooth L1)
         if cfg.train_boxes:
             loc_p = loc_data[pos_idx].view(-1, 4)

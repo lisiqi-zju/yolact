@@ -6,7 +6,6 @@ import os
 import pycocotools.mask as mask_util
 import os.path as osp
 import cv2
-from detectron2.structures import BoxMode
 import h5py
 import numpy as np
 from .config import cfg
@@ -15,12 +14,6 @@ import torch
 
 
 
-
-from detectron2.data import MetadataCatalog, build_detection_train_loader, build_detection_test_loader
-from opdmulti.motion_dataset_mapper import MotionDatasetMapper, MyMotionDatasetMapper
-from opdmulti.config import setup_opdcfg, get_parser
-from opdmulti.motion_data import register_motion_instances
-from detectron2.engine import default_setup
 
 
 def get_label_map():
@@ -160,7 +153,7 @@ def load_motion_json(json_file, image_root, dataset_name=None, extra_annotation_
 						keypts[idx] = v + 0.5
 				obj["keypoints"] = keypts
 
-			obj["bbox_mode"] = BoxMode.XYWH_ABS
+			# obj["bbox_mode"] = BoxMode.XYWH_ABS
 			if id_map:
 				obj["category_id"] = id_map[obj["category_id"]]
 			objs.append(obj)
@@ -172,12 +165,6 @@ def load_motion_json(json_file, image_root, dataset_name=None, extra_annotation_
 
 
 
-def register_datasets(data_path, cfg):
-    dataset_keys = cfg.DATASETS.TRAIN + cfg.DATASETS.TEST
-    for dataset_key in dataset_keys:
-        json = f"{data_path}/annotations/{dataset_key}.json"
-        imgs = f"{data_path}/{dataset_key.split('_')[-1]}"
-        register_motion_instances(dataset_key, {}, json, imgs)
 
 
 
