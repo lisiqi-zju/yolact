@@ -100,7 +100,9 @@ class PredictionModule(nn.Module):
             self.bbox_layer = nn.Conv2d(out_channels, self.num_priors * 4,                **cfg.head_layer_params)
             self.conf_layer = nn.Conv2d(out_channels, self.num_priors * self.num_classes, **cfg.head_layer_params)
             self.mask_layer = nn.Conv2d(out_channels, self.num_priors * self.mask_dim,    **cfg.head_layer_params)
-            
+            self.mori_layer = nn.Conv2d(out_channels, self.num_priors * 3,                **cfg.head_layer_params)
+            self.maxi_layer = nn.Conv2d(out_channels, self.num_priors * 3,                **cfg.head_layer_params)
+
             if cfg.use_mask_scoring:
                 self.score_layer = nn.Conv2d(out_channels, self.num_priors, **cfg.head_layer_params)
 
@@ -168,6 +170,8 @@ class PredictionModule(nn.Module):
 
         bbox = src.bbox_layer(bbox_x).permute(0, 2, 3, 1).contiguous().view(x.size(0), -1, 4)
         conf = src.conf_layer(conf_x).permute(0, 2, 3, 1).contiguous().view(x.size(0), -1, self.num_classes)
+        mori = src.mori_layer(x).permute(0, 2, 3, 1).contiguous().view(x.size(0), -1, 3)
+        maxi = src.maxi_layer(x).permute(0, 2, 3, 1).contiguous().view(x.size(0), -1, 3)
         
         if cfg.eval_mask_branch:
             mask = src.mask_layer(mask_x).permute(0, 2, 3, 1).contiguous().view(x.size(0), -1, self.mask_dim)
@@ -198,10 +202,10 @@ class PredictionModule(nn.Module):
 
         if cfg.mask_proto_split_prototypes_by_head and cfg.mask_type == mask_type.lincomb:
             mask = F.pad(mask, (self.index * self.mask_dim, (self.num_heads - self.index - 1) * self.mask_dim), mode='constant', value=0)
-        
+             
         priors = self.make_priors(conv_h, conv_w, x.device)
 
-        preds = { 'loc': bbox, 'conf': conf, 'mask': mask, 'priors': priors }
+        preds = { 'loc': bbox, 'conf': conf, 'mask': mask, 'priors': priors, 'mori': mori, 'maxi':maxi  }
 
         if cfg.use_mask_scoring:
             preds['score'] = score
@@ -245,7 +249,7 @@ class PredictionModule(nn.Module):
 
                                 prior_data += [x, y, w, h]
 
-                self.priors = torch.Tensor(prior_data, device=device).view(-1, 4).detach()
+                self.priors = torch.tensor(prior_data, device=device).view(-1, 4).detach()
                 self.priors.requires_grad = False
                 self.last_img_size = (cfg._tmp_img_w, cfg._tmp_img_h)
                 self.last_conv_size = (conv_w, conv_h)
@@ -605,7 +609,7 @@ class Yolact(nn.Module):
 
 
         with timer.env('pred_heads'):
-            pred_outs = { 'loc': [], 'conf': [], 'mask': [], 'priors': [] }
+            pred_outs = { 'loc': [], 'conf': [], 'mask': [], 'priors': [], 'mori': [], 'maxi': [] }
 
             if cfg.use_mask_scoring:
                 pred_outs['score'] = []

@@ -23,6 +23,7 @@ import datetime
 
 # Oof
 import eval as eval_script
+from data.opdmulti import OPDmultiDetection
 
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
@@ -38,7 +39,7 @@ parser.add_argument('--resume', default=None, type=str,
 parser.add_argument('--start_iter', default=-1, type=int,
                     help='Resume training at this iter. If this is -1, the iteration will be'\
                          'determined from the file name.')
-parser.add_argument('--num_workers', default=4, type=int,
+parser.add_argument('--num_workers', default=8, type=int,
                     help='Number of workers used in dataloading')
 parser.add_argument('--cuda', default=True, type=str2bool,
                     help='Use CUDA to train model')
@@ -117,7 +118,7 @@ if args.batch_size // torch.cuda.device_count() < 6:
         print('Per-GPU batch size is less than the recommended limit for batch norm. Disabling batch norm.')
     cfg.freeze_bn = True
 
-loss_types = ['B', 'C', 'M', 'P', 'D', 'E', 'S', 'I']
+loss_types = ['B', 'C', 'M', 'P', 'D', 'E', 'S', 'I', 'Mo', 'Ma']
 
 if torch.cuda.is_available():
     if args.cuda:
@@ -173,15 +174,18 @@ def train():
     if not os.path.exists(args.save_folder):
         os.mkdir(args.save_folder)
 
-    dataset = COCODetection(image_path=cfg.dataset.train_images,
-                            info_file=cfg.dataset.train_info,
-                            transform=SSDAugmentation(MEANS))
+    # dataset = COCODetection(image_path=cfg.dataset.train_images,
+    #                         info_file=cfg.dataset.train_info,
+    #                         transform=SSDAugmentation(MEANS))
+    dataset = OPDmultiDetection(image_path='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5',
+                            info_file='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5/annotations/MotionNet_train.json',
+                            transform=BaseTransform(MEANS))
     
     if args.validation_epoch > 0:
         setup_eval()
-        val_dataset = COCODetection(image_path=cfg.dataset.valid_images,
-                                    info_file=cfg.dataset.valid_info,
-                                    transform=BaseTransform(MEANS))
+        val_dataset = OPDmultiDetection(image_path='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5',
+                                    info_file='/data92/lisq2309/test/dataset/OPDMulti/MotionDataset_h5/annotations/MotionNet_valid.json',
+                                    transform=BaseTransform(MEANS),mode='valid')
 
     # Parallel wraps the underlying module, but when saving and loading we don't want that
     yolact_net = Yolact()
@@ -241,14 +245,16 @@ def train():
     last_time = time.time()
 
     epoch_size = len(dataset) // args.batch_size
+    # epoch_size=100
     num_epochs = math.ceil(cfg.max_iter / epoch_size)
+    # num_epochs=1
     
     # Which learning rate adjustment step are we on? lr' = lr * gamma ^ step_index
     step_index = 0
 
     data_loader = data.DataLoader(dataset, args.batch_size,
                                   num_workers=args.num_workers,
-                                  shuffle=True, collate_fn=detection_collate,
+                                  shuffle=False, collate_fn=detection_collate,
                                   pin_memory=True)
     
     

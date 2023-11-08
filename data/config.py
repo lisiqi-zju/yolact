@@ -658,10 +658,11 @@ yolact_base_config = coco_base_config.copy({
 
     # Dataset stuff
     'dataset': coco2017_dataset,
-    'num_classes': len(coco2017_dataset.class_names) + 1,
+    # 'num_classes': len(coco2017_dataset.class_names) + 1,
+    'num_classes': 3+ 1,
 
     # Image Size
-    'max_size': 550,
+    'max_size': 256,
     
     # Training params
     'lr_steps': (280000, 600000, 700000, 750000),
